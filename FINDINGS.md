@@ -52,11 +52,52 @@ health_check
 `instruqt lab validate` accepts the `tcp` form. The error message naming HTTP
 while only `tcp` was declared is the tell.
 
+### What the official docs promise
+
+Checked before filing. The docs are unambiguous and carry no caveat.
+
+**1. It is documented as available now, not Post GA.** The feature-availability
+table at `/whats-new/overview` lists:
+
+> | [Containers](/reference/sandbox/compute/container) | CPU, memory, and GPU limits, plus health checks that can test **HTTP, TCP, or run a command**. | **Early Access** |
+
+**2. The container reference defines three distinct probe types:**
+
+```
+health_check
+   ├─ timeout
+   ├─ http[] (address, method, body, headers, success_codes)
+   ├─ tcp[]  (address)
+   └─ exec[] (command, script, exit_code)
+```
+
+**3. It specifies the exact behaviour per type.** From the rendered field table
+on `/reference/sandbox/compute/container`:
+
+| Block | Documented behaviour |
+| --- | --- |
+| `http` | "Sends an HTTP request to the address and passes when the response matches the expected success codes" |
+| `tcp` | **"Attempts to open a TCP connection to the address. If the connection opens, the check passes."** |
+| `exec` | "The check passes when the command exits with code 0." |
+
+**4. There is no caveat.** Searched both the markdown source and the rendered
+page for `only http` / `not implemented` / `not supported` / `unsupported` /
+`limitation` near `tcp` — nothing.
+
+So the documented contract is precisely "open a TCP connection and pass if it
+opens", which is the only sensible probe for a non-HTTP service such as VNC, a
+database, or a message broker. The runtime does an HTTP request instead.
+
 ### Expected
 
-A `tcp` health check should open a TCP connection to the address and treat a
-successful connect as healthy — which is the only sensible probe for a non-HTTP
-service such as VNC, a database, or a message broker.
+A `tcp` health check should behave as its own documentation states.
+
+### Minor, same area
+
+Neither of the two `health_check` examples in the container reference uses `tcp`
+or `exec` — both use `http`. The other two probe types are defined in the
+structure tree and the field table but never shown in an example, which is
+probably why this went unnoticed.
 
 ### Reproduce
 
@@ -112,3 +153,22 @@ The lab has not yet reached a running state, so these remain open:
 - **Does a task check script run in a Debian container?** The task targets the
   Debian-based desktop container, which would show whether the exit-code-2
   failure is specific to the `exec` resource.
+
+---
+
+## Note on an earlier finding of mine (D2, `instruqt lab logs`)
+
+While checking these docs I found that the CLI troubleshooting section does
+document a remedy for the `lab logs` failure I reported earlier:
+
+> **Lab logs cannot find the lab or fails without a stream:**
+> - Authenticate with `instruqt auth login` or set `INSTRUQT_TOKEN`
+> - Use `team/lab` in the form `<team-slug>/<lab-slug>`, or pass `--session`
+
+I did not try re-authenticating, so my own observation may simply have been a
+stale token and should not be filed on its own. Hrushikesh's report of
+2026-08-18 remains the stronger evidence: he logged out, updated the CLI, logged
+back in, and still got `Entity not found`.
+
+Nothing in the docs covers the G2 network-attach failure, and there is no
+known-issues page in the docs index.
