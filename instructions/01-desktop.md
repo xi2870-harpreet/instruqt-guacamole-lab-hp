@@ -48,8 +48,9 @@ The VNC server can take a few seconds after the container is healthy. Use the
 
 ```
 ss -ltn | grep 5901
-ls /root/.vnc/
+ls /headless/.vnc/
 ```
 
 > The desktop's VNC password is `instruqt`, set through the `VNC_PW` environment
-> variable in `sandbox.hcl`.
+> variable in `sandbox.hcl`. The container runs as UID 1000 with `HOME=/headless`,
+> so the VNC state lives under `/headless/.vnc/`, not `/root`.

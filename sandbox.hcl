@@ -50,10 +50,6 @@ resource "container" "guacamole" {
     name = "flcontainers/guacamole:latest"
   }
 
-  environment = {
-    EXTENSIONS = ""
-  }
-
   port {
     local = 8080
   }

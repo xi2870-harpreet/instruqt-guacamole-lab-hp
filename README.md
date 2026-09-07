@@ -34,3 +34,29 @@ terminal  desktop         -> "Desktop shell" tab
 The task's check script runs inside the Debian-based `desktop` container. If it
 passes, the exit-code-2 failure is specific to the `exec` resource rather than
 to running scripts in containers generally.
+
+## Image facts, verified from the registry rather than assumed
+
+`consol/ubuntu-xfce-vnc:latest`
+
+- exposes `5901/tcp` (VNC) and `6901/tcp` (noVNC)
+- runs as **UID 1000**, `HOME=/headless` — VNC state is under `/headless/.vnc/`
+- `VNC_PW` defaults to `vncpassword`; this lab overrides it to `instruqt`
+- entrypoint `/dockerstartup/vnc_startup.sh --wait`, left untouched
+
+`flcontainers/guacamole:latest`
+
+- exposes `8080/tcp` (web) and `4822/tcp` (guacd, internal only)
+- runs as root, entrypoint `/startup.sh`, Guacamole 1.6.0
+- carries `POSTGRES_*` defaults but no `POSTGRES_HOST`, so it uses its bundled
+  database and needs no external one
+
+## The thing actually worth watching
+
+Guacamole streams the remote display over a **WebSocket**. This lab is therefore
+a real test of whether a `service` tab proxies WebSocket upgrades, not just
+plain HTTP. If the Guacamole UI loads and authenticates but the desktop panel
+stays blank or disconnects, suspect the service proxy rather than the desktop
+container — check the browser console for a failed `wss://` upgrade before
+blaming VNC.
+
