@@ -32,13 +32,6 @@ resource "container" "desktop" {
     aliases = ["desktop"]
   }
 
-  health_check {
-    timeout = "120s"
-
-    tcp {
-      address = "localhost:5901"
-    }
-  }
 }
 
 # ---------------------------------------------------------------------------
@@ -64,11 +57,4 @@ resource "container" "guacamole" {
     aliases = ["guacamole"]
   }
 
-  health_check {
-    timeout = "180s"
-
-    tcp {
-      address = "localhost:8080"
-    }
-  }
 }
