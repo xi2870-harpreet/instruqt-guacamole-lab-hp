@@ -33,28 +33,3 @@ resource "container" "desktop" {
   }
 
 }
-
-# ---------------------------------------------------------------------------
-# Apache Guacamole, all-in-one (guacd + web app + sqlite in one image), so no
-# separate database and no configuration files to inject.
-# ---------------------------------------------------------------------------
-resource "container" "guacamole" {
-  image {
-    name = "flcontainers/guacamole:latest"
-  }
-
-  port {
-    local = 8080
-  }
-
-  resources {
-    cpu    = 1000
-    memory = 1024
-  }
-
-  network {
-    id      = resource.network.main.meta.id
-    aliases = ["guacamole"]
-  }
-
-}
