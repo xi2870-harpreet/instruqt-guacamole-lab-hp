@@ -106,9 +106,13 @@ probably why this went unnoticed.
 
 ---
 
-## G2 — reproduction of the known `plugin type="tuning"` network attach failure  (already reported)
+## G2 — a container that never gets a network namespace is reported as a network-plugin failure  (P2, sharpened)
 
-With the health checks removed, a later run failed differently:
+Originally logged as a reproduction of the known `plugin type="tuning"` error.
+Controlled probes on 2026-09-08 changed the picture: this is **deterministic and
+image-specific**, and the error message points at the wrong resource.
+
+### The failure
 
 ```
 unable to create resource "resource.container.desktop": unable to connect
@@ -118,16 +122,72 @@ network main: plugin type="tuning" failed (add): failed to Statfs
 "/proc/1621/ns/net": no such file or directory
 ```
 
-This is the **same failure Maximilian Dürr (Airlock) reported on 2026-08-06**,
-where it was hit while pinning a `rancher/k3s` image version.
+### It is not intermittent, and it is not one plugin
 
-The useful new information: it is **not k3s-specific**. Here it occurred with
-`consol/ubuntu-xfce-vnc:latest`, an unrelated Ubuntu/XFCE VNC image, on a plain
-`resource "network"` with two containers. That widens the scope of the existing
-report from "pinned k3s image" to "container network attach in general".
+Three consecutive fresh sessions on the same commit all failed at
+`resource.container.desktop`. But the CNI plugin named **changes between runs**:
 
-It also appears intermittent: the earlier run of the same lab got far enough to
-fail on the health check instead, meaning the network attach succeeded that time.
+| Run | Container id | Plugin named | Missing path |
+|-----|--------------|--------------|--------------|
+| 1   | `9007b363…`  | `tuning`     | `/proc/1621/ns/net` |
+| 2   | `9007b363…`  | `tuning`     | `/proc/1621/ns/net` (cached page, same session) |
+| 3   | `e475f081…`  | **`loopback`** | `/proc/1614/ns/net` |
+
+`loopback` is the first plugin in a CNI chain and `tuning` is near the end, so
+no single plugin is at fault. What both runs share is that
+`/proc/<pid>/ns/net` **does not exist by the time the chain runs** — the
+container's network namespace is already gone.
+
+### Controlled probes: the image is the variable, not the topology
+
+Each probe changed exactly one thing and left the rest of the HCL byte-identical
+(two containers, one `resource "network"`, same aliases, same ports, no health
+checks, no `exec`).
+
+| Probe | Desktop image | Runs as | Result |
+|-------|---------------|---------|--------|
+| repro | `consol/ubuntu-xfce-vnc:latest` | UID 1000 | **fails, 3/3** |
+| 1 (`ea9a2c0`) | `nginx:alpine` | root | **starts, reaches "Enter lab"** |
+| 2 (`77aa4cf`) | `nginxinc/nginx-unprivileged:alpine` | UID 101 | **starts, reaches "Enter lab"** |
+
+This rules out the two obvious explanations:
+
+- **Not the topology.** Two containers attaching to one network is fine.
+- **Not the non-root UID.** A non-root image starts without complaint.
+
+So it keys on `consol/ubuntu-xfce-vnc:latest` specifically. The observable is
+that its namespace disappears mid-create; the most likely reading is that its
+process exits during startup, though I have not been able to confirm that from
+inside the platform.
+
+### Why this is worth fixing regardless of the image
+
+The message names `resource.network.main` and a CNI plugin, so an author debugging
+it goes looking at their network block — where there is nothing wrong. Three
+things would have saved the whole investigation:
+
+1. Attribute the failure to the container, not the network.
+2. Say that the container exited or that its namespace was never created,
+   instead of surfacing a raw `Statfs` error.
+3. Surface the container's exit code and last log lines.
+
+### Relation to the earlier report
+
+Maximilian Dürr (Airlock) reported the same `plugin type="tuning"` /
+`Statfs /proc/<pid>/ns/net` error on **2026-08-06** while pinning a
+`rancher/k3s` image. The new information is that it is **not k3s-specific** and
+**not a network problem** — it reproduces on an unrelated Ubuntu/XFCE VNC image,
+and identical HCL with a different image starts cleanly.
+
+### Reproduce
+
+```
+git clone https://github.com/xi2870-harpreet/instruqt-guacamole-lab-hp
+```
+
+- `main` (`f4679cd`) — fails every time
+- branch `probe/nginx-desktop` — identical but for the image, starts
+- tag `repro-g1-g2` — tree as originally filed
 
 ---
 
@@ -144,15 +204,66 @@ Everything is configured through container `environment` and image defaults. The
 Guacamole VNC connection, which would normally need a config file, is created by
 the learner in the Guacamole UI instead.
 
-## Still untested
+## Both open questions are now answered
 
-The lab has not yet reached a running state, so these remain open:
+Probe 1 reached a running session, so the two things this lab was built to test
+could finally be measured.
 
-- **Does a `service` tab proxy WebSocket upgrades?** Guacamole streams the
-  display over `wss://`. This is the question the lab was built to answer.
-- **Does a task check script run in a Debian container?** The task targets the
-  Debian-based desktop container, which would show whether the exit-code-2
-  failure is specific to the `exec` resource.
+### Service tabs do proxy WebSocket upgrades — works as hoped
+
+The `service` tab is served from `https://service-<id>.labs.instruqt.com/`. The
+Apache Guacamole web app loaded through it, and a tunnel handshake against that
+origin returned:
+
+```
+OPEN_proto_guacamole
+```
+
+So the proxy completes the `wss://` upgrade **and** negotiates the `guacamole`
+subprotocol. No defect here — worth recording as a positive result, because it
+means Guacamole-style streaming UIs are viable behind a `service` tab.
+
+### Task check scripts do run in containers — this narrows the exec-exit-2 bug
+
+The task targets the desktop container. Pressing **Check** ran
+`scripts/task/desktop_ready/check.sh` inside it and returned the authored
+failure message:
+
+> Nothing is listening on 5901 in the desktop container yet.
+
+A clean exit 1, surfaced correctly. Script execution inside a container is
+therefore fine, which narrows `container exec failed with exit code 2`
+(`instruqt-cloud-labs-hp/FINDING-exec-exit2.md`) to the **`exec` resource
+specifically**, rather than to running scripts in containers generally.
+
+---
+
+## G3 — the loading screen does not track the real session state  (P3, more evidence for D1)
+
+Reproduced twice more while running the probes, in both directions:
+
+- Session had **failed**; the original tab still showed `Starting instance`
+  indefinitely. A fresh tab on the same URL showed the failure screen.
+- Session had become **ready**; the original tab still showed
+  `Creating infrastructure`. A fresh tab showed `Enter lab`.
+
+The state is correct on load and then stops updating, so the only reliable way
+to know what a session is doing is to reload. This is the same defect as D1,
+which I originally mis-diagnosed as a session hang.
+
+## G4 — a failed session is sticky, and `Exit` does not clear it  (P3, new)
+
+On the failure screen:
+
+- **`Exit` does nothing.** The screen stays, and the session is not cleared.
+- **`?reference=<branch>` is ignored.** Requesting a different git ref returned
+  the previous failed session — same container id, same sandbox directory, and
+  the error still quoting the *old* branch's image.
+
+The only thing that actually cleared it was **Stop** followed by **Play** from
+the manage page. Until then, every attempt to retry looked like a fresh failure
+but was a cached page from the first one — which is how I initially mistook a
+cached error for a second reproduction.
 
 ---
 
