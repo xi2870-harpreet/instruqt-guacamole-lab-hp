@@ -9,7 +9,7 @@ resource "network" "main" {
 # ---------------------------------------------------------------------------
 resource "container" "desktop" {
   image {
-    name = "nginxinc/nginx-unprivileged:alpine"
+    name = "consol/ubuntu-xfce-vnc:latest"
   }
 
   environment = {
@@ -19,7 +19,7 @@ resource "container" "desktop" {
   }
 
   port {
-    local = 8080
+    local = 5901
   }
 
   resources {
