@@ -9,7 +9,7 @@ resource "network" "main" {
 # ---------------------------------------------------------------------------
 resource "container" "desktop" {
   image {
-    name = "nginx:alpine"
+    name = "nginxinc/nginx-unprivileged:alpine"
   }
 
   environment = {
@@ -19,7 +19,7 @@ resource "container" "desktop" {
   }
 
   port {
-    local = 80
+    local = 8080
   }
 
   resources {
