@@ -221,6 +221,63 @@ So an author has nothing to act on. The one field that would resolve it —
 the exit status of a container the platform itself logs as having stopped — is
 not recorded at any severity.
 
+### ROOT CAUSE: the container process starts before the network is attached
+
+Confirmed 2026-09-10, after Instruqt engineering said the container dies before
+attach and the netns is cleaned up by the time they connect it. That is right,
+and this is *why* it dies.
+
+Probe: replace the image entrypoint but still run the startup script as PID 1,
+keeping the container alive so its output survives.
+
+```hcl
+entrypoint = ["/bin/sh", "-c"]
+command    = ["/dockerstartup/vnc_startup.sh --wait > /tmp/boot.log 2>&1; echo \"PID1_EXIT=$?\" >> /tmp/boot.log; sleep infinity"]
+```
+
+The sandbox then builds, and `/tmp/boot.log` ends:
+
+```
+hostname: Temporary failure in name resolution
+PID1_EXIT=1
+```
+
+The image's own script, lines 3 and 63:
+
+```
+3:set -e
+63:VNC_IP=$(hostname -i)
+```
+
+`hostname -i` asks the container for its own IP. **There is no network yet**, so
+it fails; `set -e` turns that into exit 1; the container dies; the namespace goes
+away; and the CNI chain reports the `Statfs` error the author sees.
+
+The platform's own timings confirm the window:
+
+```
+11:20:09.956  Creating Docker Container      [desktop]
+11:20:11.587  Attaching container to CNI network    <- 1.631s later
+```
+
+The container runs for ~1.6 seconds with no network before the attach starts.
+
+**This is not specific to this image.** Any container whose startup resolves DNS,
+looks up its own address, or reaches another service in that window will exit and
+produce the same misleading CNI error. It is a startup-ordering bug, and the
+`Statfs` message is two layers downstream of it.
+
+Proof it is the ordering and not the script: running that same script by hand
+from a terminal in a healthy sandbox works —
+`VNCSERVER started on DISPLAY= :1 => connect via VNC viewer with 10.0.250.2:5901`
+— because by then the container is on the network.
+
+Full capture: `artifacts/pid1-boot.log`.
+
+**Workaround for authors,** until the ordering is fixed: wrap the entrypoint so
+it waits for the network, e.g.
+`sh -c 'until hostname -i >/dev/null 2>&1; do sleep 0.2; done; exec /real/entrypoint'`.
+
 ### Why this is worth fixing regardless of the image
 
 The message names `resource.network.main` and a CNI plugin, so an author debugging
