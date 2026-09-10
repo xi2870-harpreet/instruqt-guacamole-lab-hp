@@ -12,7 +12,8 @@ resource "container" "desktop" {
     name = "consol/ubuntu-xfce-vnc:latest"
   }
 
-  command = ["sleep", "infinity"]
+  entrypoint = ["/bin/sh", "-c"]
+  command    = ["sleep infinity"]
 
   environment = {
     VNC_PW         = "instruqt"
