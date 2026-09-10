@@ -1,6 +1,8 @@
 *A container that fails to start is reported as a network error — and the logs show the network is fine*
 
-This is the same `failed to Statfs "/proc/<pid>/ns/net"` error Maximilian reported on 6 Aug with a pinned k3s image. I have a repro that has nothing to do with k3s, plus platform logs showing what's actually going on, so I'm posting the diagnosis rather than a new bug.
+Same `failed to Statfs "/proc/<pid>/ns/net"` error Maximilian Dürr (Ergon/Airlock) hit on 6 Aug in #org-airlock, where it was reported against a pinned k3s image. It has not been raised here, and I don't think it has been diagnosed — so: it is not k3s-specific, it is not a network problem, and the platform logs already contain the proof.
+
+His was `resource.kubernetes_cluster.k3s`, mine is a plain `resource.container`, so it spans resource types. This is customer-facing, not just an internal probe.
 
 *What the author sees*
 
