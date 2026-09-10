@@ -12,6 +12,8 @@ resource "container" "desktop" {
     name = "consol/ubuntu-xfce-vnc:latest"
   }
 
+  command = ["sleep", "infinity"]
+
   environment = {
     VNC_PW         = "instruqt"
     VNC_RESOLUTION = "1280x800"
