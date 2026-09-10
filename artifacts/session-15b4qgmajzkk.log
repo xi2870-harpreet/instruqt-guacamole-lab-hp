@@ -1,0 +1,74 @@
+Session      : 15b4qgmajzkk
+Lab          : instruqt-support / ubuntu-guacamole-probe  (lab_id ab9b7a96-f61c-4f73-b7bc-2bab51e7b01b)
+Commit       : 55f724a  (main, the G2 repro)
+Captured     : 2026-09-10, Logs page with severity=DEBUG, all entries for this session
+Source       : https://play.instruqt.com/manage/instruqt-support/logs?severity=DEBUG
+Emitter      : every entry below has payload.service = "lab-agent"
+
+TIMELINE (UTC)
+==============
+11:19:18.393  DEBUG  Parsing configuration
+11:19:18.483  DEBUG  Parsing configuration
+11:19:18.504  DEBUG  unable to load state
+                     -> unable to read state file: open /.instruqt/state/state.json: no such file or directory
+11:19:18.542  DEBUG  Lab DNS listening on bridge gateway
+11:19:18.551  DEBUG  Pulling image
+11:19:18.552  DEBUG  Pulling image
+
+--- desktop container: FAILS -------------------------------------------------
+11:20:09.956  DEBUG  Creating Docker Container      [desktop.container.sandbox.internal]
+11:20:11.587  DEBUG  Attaching container to CNI network        (+1.631s after create)
+11:20:11.685  DEBUG  Container stopped gracefully, removing    (+0.098s after attach began)
+11:20:11.693  ERROR  Unable to create container     [ref = resource.container.desktop]
+                     -> unable to connect container to network resource.network.main,
+                        successfully rolled back container: failed to attach container
+                        5dfe0f5c3c1285634d49b7b0b976c46e2f027c204149b41e80c70ea157dca481
+                        to network main: failed to attach to network main:
+                        plugin type="bridge" failed (add): failed to open netns
+                        "/proc/1803/ns/net": failed to Statfs "/proc/1803/ns/net":
+                        no such file or directory
+11:20:11.693  DEBUG  Sending msg to subscriber
+11:20:11.694  DEBUG  Sent message to subscriber
+11:20:11.694  DEBUG  Received message
+11:20:11.694  DEBUG  Handling event
+11:20:12.060  DEBUG  Message acked
+11:20:12.060  DEBUG  Message acked
+
+--- guacamole container: SUCCEEDS on the SAME network ------------------------
+11:20:23.719  DEBUG  Creating Docker Container      [guacamole.container.sandbox.internal]
+11:20:24.174  DEBUG  Attaching container to CNI network        (+0.455s after create)
+11:20:24.371  DEBUG  DNS record registered
+11:20:24.371  DEBUG  DNS record registered
+11:20:24.371  DEBUG  DNS record registered
+11:20:24.371  DEBUG  DNS record registered
+
+--- sandbox gives up ---------------------------------------------------------
+11:20:24.373  ERROR  could not create sandbox       [ref = ""]
+                     -> Error:
+                          unable to create resource "resource.container.desktop": unable to connect
+                          container to network resource.network.main, successfully rolled back container:
+                          failed to attach container
+                          5dfe0f5c3c1285634d49b7b0b976c46e2f027c204149b41e80c70ea157dca481 to network
+                          main: failed to attach to network main: plugin type="bridge" failed (add):
+                          failed to open netns "/proc/1803/ns/net": failed to Statfs "/proc/1803/ns/net":
+                          no such file or directory
+
+                        /tmp/sandbox-117784444/sandbox.hcl:10,1-1
+                             10 | resource "container" "desktop" {
+                             11 |   image {
+                             12 |     name = "consol/ubuntu-xfce-vnc:latest"
+11:20:24.374  DEBUG  Sending msg to subscriber
+11:20:24.374  DEBUG  Sent message to subscriber
+11:20:24.374  DEBUG  Received message
+11:20:24.374  DEBUG  Handling event
+11:20:24.578  DEBUG  Message acked
+11:20:24.578  DEBUG  Message acked
+
+27 entries total. Severity codes: 1 = ERROR, 4 = DEBUG.
+
+WHAT IS NOT IN THESE LOGS
+=========================
+Even at DEBUG, for the whole session there is:
+  - no container exit code
+  - no container stdout or stderr
+  - no entry naming *why* the desktop container stopped

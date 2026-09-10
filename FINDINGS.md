@@ -174,13 +174,61 @@ that its namespace disappears mid-create; the most likely reading is that its
 process exits during startup, though I have not been able to confirm that from
 inside the platform.
 
+### Platform logs settle it: the same network attaches the other container fine
+
+Pulled from the Logs page at `severity=DEBUG` for the failing session
+`15b4qgmajzkk` (full dump: `artifacts/session-15b4qgmajzkk.log`). Both
+containers in the *same session*, on the *same* `resource.network.main`:
+
+```
+--- desktop: FAILS
+11:20:09.956  Creating Docker Container      [desktop.container.sandbox.internal]
+11:20:11.587  Attaching container to CNI network      (+1.631s)
+11:20:11.685  Container stopped gracefully, removing  (+0.098s)
+11:20:11.693  Unable to create container     ref = resource.container.desktop
+
+--- guacamole: SUCCEEDS
+11:20:23.719  Creating Docker Container      [guacamole.container.sandbox.internal]
+11:20:24.174  Attaching container to CNI network      (+0.455s)
+11:20:24.371  DNS record registered  x4
+```
+
+The guacamole container attaches to that network and registers DNS **11 seconds
+later in the same sandbox build**. So the network, the CNI chain and the bridge
+plugin are all healthy — within the very session that reports a network failure.
+This is a tighter control than my two image probes, because nothing differs
+except which container is being attached.
+
+Two more things the logs show:
+
+- **The platform already attributes it correctly.** The error entry carries
+  `ref = "resource.container.desktop"`. The container is named in the data
+  model; only the surfaced message frames it as a network problem.
+- **`Container stopped gracefully, removing`** is logged 98ms after the attach
+  begins. The platform knows the container stopped. Whether it exited on its own
+  or this line is the rollback doing the removing, I cannot tell from outside —
+  and that ambiguity is the point of the next section.
+
+### The gap that makes this undiagnosable
+
+For the entire failed session, at `DEBUG`, there is:
+
+- no container exit code
+- no container stdout or stderr
+- no entry saying *why* the desktop container stopped
+
+So an author has nothing to act on. The one field that would resolve it —
+the exit status of a container the platform itself logs as having stopped — is
+not recorded at any severity.
+
 ### Why this is worth fixing regardless of the image
 
 The message names `resource.network.main` and a CNI plugin, so an author debugging
 it goes looking at their network block — where there is nothing wrong. Three
 things would have saved the whole investigation:
 
-1. Attribute the failure to the container, not the network.
+1. Attribute the failure to the container, not the network — the log
+   entry's own `ref` field already says `resource.container.desktop`.
 2. Say that the container exited or that its namespace was never created,
    instead of surfacing a raw `Statfs` error.
 3. Surface the container's exit code and last log lines.
