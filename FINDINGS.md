@@ -124,19 +124,33 @@ network main: plugin type="tuning" failed (add): failed to Statfs
 
 ### It is not intermittent, and it is not one plugin
 
-Three consecutive fresh sessions on the same commit all failed at
+Four fresh sessions on the same commit, across two days, all failed at
 `resource.container.desktop`. But the CNI plugin named **changes between runs**:
 
-| Run | Container id | Plugin named | Missing path |
-|-----|--------------|--------------|--------------|
-| 1   | `9007b363…`  | `tuning`     | `/proc/1621/ns/net` |
-| 2   | `9007b363…`  | `tuning`     | `/proc/1621/ns/net` (cached page, same session) |
-| 3   | `e475f081…`  | **`loopback`** | `/proc/1614/ns/net` |
+| Run | Date | Container id | Plugin named | Missing path |
+|-----|------|--------------|--------------|--------------|
+| 1 | 8 Sept | `9007b363…` | `tuning` | `/proc/1621/ns/net` |
+| 2 | 8 Sept | `9007b363…` | `tuning` | `/proc/1621/ns/net` (cached page, same session — see G4) |
+| 3 | 8 Sept | `e475f081…` | **`loopback`** | `/proc/1614/ns/net` |
+| 4 | 10 Sept | `5dfe0f5c…` | **`bridge`** | `/proc/1803/ns/net` |
 
-`loopback` is the first plugin in a CNI chain and `tuning` is near the end, so
-no single plugin is at fault. What both runs share is that
-`/proc/<pid>/ns/net` **does not exist by the time the chain runs** — the
+Three different plugins spanning the whole chain — `loopback` runs first,
+`bridge` does the actual attach, `tuning` is near the end — so **no single
+plugin is at fault**. Every run shares the one thing that matters:
+`/proc/<pid>/ns/net` **does not exist by the time the chain runs**. The
 container's network namespace is already gone.
+
+Run 4 states this outright, because `bridge` reports it more fully than the
+others do:
+
+```
+plugin type="bridge" failed (add): failed to open netns "/proc/1803/ns/net":
+failed to Statfs "/proc/1803/ns/net": no such file or directory
+```
+
+`failed to open netns` is the actual condition. The plugin name in the message
+is incidental — it is whichever plugin happened to reach for the namespace
+first.
 
 ### Controlled probes: the image is the variable, not the topology
 
@@ -146,7 +160,7 @@ checks, no `exec`).
 
 | Probe | Desktop image | Runs as | Result |
 |-------|---------------|---------|--------|
-| repro | `consol/ubuntu-xfce-vnc:latest` | UID 1000 | **fails, 3/3** |
+| repro | `consol/ubuntu-xfce-vnc:latest` | UID 1000 | **fails, 4/4** |
 | 1 (`ea9a2c0`) | `nginx:alpine` | root | **starts, reaches "Enter lab"** |
 | 2 (`77aa4cf`) | `nginxinc/nginx-unprivileged:alpine` | UID 101 | **starts, reaches "Enter lab"** |
 
@@ -185,7 +199,7 @@ and identical HCL with a different image starts cleanly.
 git clone https://github.com/xi2870-harpreet/instruqt-guacamole-lab-hp
 ```
 
-- `main` (`f4679cd`) — fails every time
+- `main` (`55f724a`) — fails every time, 4/4 across two days
 - branch `probe/nginx-desktop` — identical but for the image, starts
 - tag `repro-g1-g2` — tree as originally filed
 
